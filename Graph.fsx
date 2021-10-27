@@ -13,4 +13,4 @@ let drawChart time (series:(string * 'a) list) =
     |> Seq.map (fun (name, data) -> line time data name)
     |> Chart.combine
     |> Chart.withXAxisStyle("Time")
-    |> Chart.withYAxisStyle("Collateral")
+    |> Chart.withYAxisStyle("Excess Collateral")
