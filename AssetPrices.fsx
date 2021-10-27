@@ -31,7 +31,7 @@ let assetHistoryFrom startTime symbol interval (limit:int) =
     |> Array.map makeCandle
 
 let ethPrices fromTime toTime = 
-    [|1000L .. 1000L .. 38000L|]
+    [|1000L .. 1000L .. 9000L|]
     |> Array.Parallel.map (fun h -> assetHistoryFrom (h |> hours |> ago) "ETHUSDT" "1h" 1000)
     |> Array.reduce Array.append
     |> Array.sortBy (fun x -> x.Time)
