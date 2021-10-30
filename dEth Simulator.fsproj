@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="dEth.fsx" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
