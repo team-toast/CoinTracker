@@ -1,2 +1,8 @@
 bin
 obj
+
+.fake
+.ionide
+*.speedscope.json
+*.nettrace
+*.nettrace.etlx

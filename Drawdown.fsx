@@ -1,10 +1,10 @@
 [<Struct>]
 type Drawdown =
     { Time : int64
-    ; PreviousATH : decimal
-    ; Value : decimal
-    ; Drawdown : decimal
-    ; DrawdownPercentage : decimal
+    ; PreviousATH : float
+    ; Value : float
+    ; Drawdown : float
+    ; DrawdownPercentage : float
     }
 
 let drawdowns timef valuef list = 
@@ -16,16 +16,16 @@ let drawdowns timef valuef list =
             [{ Time = time
             ; PreviousATH = value
             ; Value = value
-            ; Drawdown = 0M
-            ; DrawdownPercentage = 0M 
+            ; Drawdown = 0.0
+            ; DrawdownPercentage = 0.0
             }]
         | head::_ -> 
             [if (valuef item) > head.PreviousATH then
                 { Time = time
                 ; PreviousATH = value
                 ; Value = value
-                ; Drawdown = 0M
-                ; DrawdownPercentage = 0M 
+                ; Drawdown = 0.0
+                ; DrawdownPercentage = 0.0
                 }
             else
                 let newDrawdown = value - head.PreviousATH

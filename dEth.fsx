@@ -35,7 +35,7 @@ module DEth =
 
 
     type PossiblyUndefined =
-        | Yeah of decimal
+        | Yeah of float
         | Nah
 
     show 1
@@ -43,26 +43,20 @@ module DEth =
     [<Struct>]
     type Vault = 
         { Time : int64
-        ; Collateral : decimal
-        ; Debt : decimal
-        ; Price : decimal   
-        ; TargetRatio : decimal
-        ; LowerRatio : decimal
-        ; UpperRatio : decimal
+        ; Collateral : float
+        ; Debt : float
+        ; Price : float   
+        ; TargetRatio : float
+        ; LowerRatio : float
+        ; UpperRatio : float
         ; Rebalances : uint 
         } with
-        member this.CollateralValue = this.Collateral * this.Price
-        member this.ExcessCollateralValue = this.CollateralValue - this.Debt
-        member this.ExcessCollateral = (this.ExcessCollateralValue / this.Price)
-        member this.Ratio = 
-            match this.Debt with
-            | 0M -> Nah
-            | _ -> Yeah(this.CollateralValue / this.Debt)
-        member this.TargetLeverage = 1M/(this.TargetRatio - 1M) + 1M
-        member this.ShouldRebalance = 
-            match this.Ratio with
-            | Nah -> true
-            | Yeah ratio -> ratio < this.LowerRatio || ratio > this.UpperRatio
+        member inline this.CollateralValue = this.Collateral * this.Price
+        member inline this.ExcessCollateralValue = this.CollateralValue - this.Debt
+        member inline this.ExcessCollateral = (this.ExcessCollateralValue / this.Price)
+        member inline this.Ratio = this.CollateralValue / this.Debt
+        member inline this.TargetLeverage = 1.0/(this.TargetRatio - 1.0) + 1.0
+        member inline this.ShouldRebalance = this.Debt = 0.0 || this.Ratio < this.LowerRatio || this.Ratio > this.UpperRatio
 
     show 2
 
@@ -71,12 +65,12 @@ module DEth =
         let newCollateralValue = vault.ExcessCollateralValue * vault.TargetLeverage
         let collateralValueDiff = newCollateralValue - vault.CollateralValue
         let collateralExchangeCharge = (collateralValueDiff * fee) / vault.Price |> abs
-        let gasFee = 1_500_000M * gasPrice / 1_000_000_000M
+        let gasFee = 1_500_000.0 * gasPrice / 1_000_000_000.0
         let newCollateral = (newCollateralValue / vault.Price) - collateralExchangeCharge - gasFee
-        let newDebt = newCollateralValue * (vault.TargetLeverage - 1M) / vault.TargetLeverage
+        let newDebt = newCollateralValue * (vault.TargetLeverage - 1.0) / vault.TargetLeverage
         { vault with 
-              Collateral = max newCollateral 0M
-            ; Debt = max newDebt 0M
+              Collateral = max newCollateral 0.0
+            ; Debt = max newDebt 0.0
             ; Rebalances = vault.Rebalances + 1u
         }
 
@@ -91,7 +85,7 @@ module DEth =
         let init = 
             { Time = time
             ; Collateral = collateral
-            ; Debt = 2000.0M
+            ; Debt = 2000.0
             ; Price = price
             ; TargetRatio = targetRatio
             ; LowerRatio = lowerRatio
@@ -100,6 +94,16 @@ module DEth =
             }
         init
 
+    let vaultList startingCollateral targetRatio upperRatio lowerRatio candleRange = 
+        let update (vaults: Vault list) (candle: Candle)  =
+            match vaults with
+            | [] -> [create startingCollateral candle.Time candle.Close targetRatio upperRatio lowerRatio]
+            | head::tail -> 
+                [nextVault head candle] @ vaults
+
+        candleRange
+        |> Array.fold update []
+
     show 3
 
     let allPrices = savedEthPrices (toEpochTime 2017 06 01) (now ())
@@ -107,26 +111,15 @@ module DEth =
         allPrices
         |> Array.filter (fun c -> c.Time >= startDate && c.Time <= endDate)
 
-    show 3.5
-
-    // makes a list of vaults over time that can be anylized
-    let vaultList startingCollateral targetRatio upperRatio lowerRatio startDate endDate = 
-        let update (vaults: Vault list) (candle: Candle)  =
-            match vaults with
-            | [] -> [create startingCollateral candle.Time candle.Close targetRatio upperRatio lowerRatio]
-            | head::tail -> 
-                [nextVault head candle] @ vaults
-
-        savedEthPrices startDate endDate
-        |> Array.fold update []
+    let candleRange = savedEthPrices (toEpochTime 2017 06 01) (now ())
 
     show 4
 
     let (best, stDev) =  
-        [|1.7M .. 0.1M .. 4M|]
+        [|1.7 .. 0.1 .. 4.0|]
         |> Array.map (
             fun target ->
-                [|0.1M .. 0.01M .. 2M|]
+                [|0.1 .. 0.02 .. 2.0|]
                 |> Array.map (
                     fun toll ->
                         let vaults = 
@@ -134,9 +127,8 @@ module DEth =
                                 startingCollateral 
                                 target 
                                 (target + toll) 
-                                (max (target - toll) 1.55M)
-                                (toEpochTime 2017 08 01) 
-                                (now ())
+                                (max (target - toll) 1.55)
+                                candleRange
                         let stDev =
                             vaults
                             |> Seq.stDevBy (fun v -> float (v.ExcessCollateral / startingCollateral))
@@ -145,12 +137,12 @@ module DEth =
                 )
 
         |> Array.reduce Array.append
-        |> Array.sortByDescending (fun (v, stDev) -> v.ExcessCollateral)// / (decimal stDev))
+        |> Array.sortByDescending (fun (v, stDev) -> v.ExcessCollateral)// / (float stDev))
         |> Array.head
 
     show (best, stDev)
 
-    let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio (toEpochTime 2021 08 01) (now ())
+    let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio candleRange
 
     let last l = List.head l
     let first l = vaults.[vaults.Length - 1]
@@ -175,12 +167,12 @@ module DEth =
         vaults
         |> List.rev
         |> drawdowns (fun v -> v.Time) (fun v -> v.ExcessCollateral)
-        |> List.map (fun x -> x.DrawdownPercentage * 100M)
+        |> List.map (fun x -> x.DrawdownPercentage * 100.0)
 
     let predictedDrawdowns = 
         predictedCollateral
         |> List.rev
         |> drawdowns (fun v -> v.Time) (fun v -> v.Value)
-        |> List.map (fun x -> x.DrawdownPercentage * 100M)
+        |> List.map (fun x -> x.DrawdownPercentage * 100.0)
 
     show ("now:", now ())
