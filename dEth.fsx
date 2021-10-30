@@ -7,6 +7,7 @@
 #load "AssetPrices.fsx"
 #load "Graph.fsx"
 #load "Drawdown.fsx"
+#load "Surface.fsx"
 
 open FSharp.Data
 open FSharp.Stats
@@ -18,6 +19,7 @@ open AssetPrices
 open Drawdown
 open Graph
 open Parameters
+open Surface
 open System.Collections.Generic
 
 module DEth =
@@ -116,7 +118,7 @@ module DEth =
     show 4
 
     let optimizations = 
-        [|1.7 .. 0.01 .. 4.0|]
+        [|0.0 .. 0.01 .. 4.0|]
         |> Array.map (
             fun target ->
                 [|0.1 .. 0.01 .. 1.0|]
@@ -127,7 +129,7 @@ module DEth =
                                 startingCollateral 
                                 target 
                                 (target + toll) 
-                                (max (target - toll) 1.55)
+                                (target - toll)
                                 candleRange
                         let stDev =
                             vaults
@@ -149,30 +151,37 @@ module DEth =
         optimizations |> Array.map (fun (v, std) -> v.UpperRatio - v.TargetRatio),
         optimizations |> Array.map (fun (v, std) -> v.ExcessCollateral / startingCollateral - 1.0)
 
-    let surface = 
-        optimizations
-        |> Array.map (fun (v, std) -> v)
-        |> Array.groupBy (fun vault -> vault.TargetRatio)
-        |> Array.sortBy (fun (g,_) -> g)
-        |> Array.map (fun (targetRatioGroup, vaults) -> 
-            vaults 
-            |> Array.groupBy (fun vault -> vault.UpperRatio - vault.TargetRatio) 
-            |> Array.sortBy (fun (g,_) -> g)
-            |> Array.map (fun (tolleranceGroup, vaults) -> (vaults |> Array.head).ExcessCollateral))
+    // let surface = 
+    //     optimizations
+    //     |> Array.map (fun (v, std) -> v)
+    //     |> Array.groupBy (fun vault -> vault.TargetRatio)
+    //     |> Array.sortBy (fun (g,_) -> g)
+    //     |> Array.map (fun (targetRatioGroup, vaults) -> 
+    //         vaults 
+    //         |> Array.groupBy (fun vault -> vault.UpperRatio - vault.TargetRatio) 
+    //         |> Array.sortBy (fun (g,_) -> g)
+    //         |> Array.map (fun (tolleranceGroup, vaults) -> (vaults |> Array.head).ExcessCollateral))
 
-    let surfaceX = 
-        optimizations
-        |> Array.map (fun (v, std) -> v)
-        |> Array.distinctBy (fun v -> v.TargetRatio)
-        |> Array.map (fun v -> v.TargetRatio)
-        |> Array.sort
+    // let surfaceX = 
+    //     optimizations
+    //     |> Array.map (fun (v, std) -> v)
+    //     |> Array.distinctBy (fun v -> v.TargetRatio)
+    //     |> Array.map (fun v -> v.TargetRatio)
+    //     |> Array.sort
 
-    let surfaceY =
-        optimizations
-        |> Array.map (fun (v, std) -> v)
-        |> Array.distinctBy (fun v-> v.UpperRatio - v.TargetRatio)
-        |> Array.map (fun v -> v.UpperRatio - v.TargetRatio)
-        |> Array.sort
+    // let surfaceY =
+    //     optimizations
+    //     |> Array.map (fun (v, std) -> v)
+    //     |> Array.distinctBy (fun v-> v.UpperRatio - v.TargetRatio)
+    //     |> Array.map (fun v -> v.UpperRatio - v.TargetRatio)
+    //     |> Array.sort
+
+    let (surface, surfaceX, surfaceY) = 
+        make2D 
+            (fun (v, _) -> v.TargetRatio) 
+            (fun (v, _) -> v.UpperRatio - v.TargetRatio) 
+            (fun (v, _) -> v.ExcessCollateral)
+            optimizations
 
     let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio candleRange
 
