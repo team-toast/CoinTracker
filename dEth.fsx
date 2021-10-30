@@ -115,12 +115,12 @@ module DEth =
 
     show 4
 
-    let (best, stDev) =  
+    let optimizations = 
         [|1.7 .. 0.1 .. 4.0|]
         |> Array.map (
             fun target ->
                 [|0.1 .. 0.02 .. 2.0|]
-                |> Array.map (
+                |> Array.Parallel.map (
                     fun toll ->
                         let vaults = 
                             vaultList 
@@ -131,16 +131,23 @@ module DEth =
                                 candleRange
                         let stDev =
                             vaults
-                            |> Seq.stDevBy (fun v -> float (v.ExcessCollateral / startingCollateral))
+                            |> Seq.stDevBy (fun v -> v.ExcessCollateral / startingCollateral)
                         (vaults |> List.head), stDev
                     )
                 )
-
         |> Array.reduce Array.append
-        |> Array.sortByDescending (fun (v, stDev) -> v.ExcessCollateral)// / (float stDev))
+
+    let (best, stDev) =  
+        optimizations
+        |> Array.sortByDescending (fun (v, stDev) -> v.ExcessCollateral / stDev)
         |> Array.head
 
     show (best, stDev)
+
+    let (xOpt, yOpt, zOpt) =
+        optimizations |> Array.map (fun (v, std) -> v.TargetRatio),
+        optimizations |> Array.map (fun (v, std) -> v.UpperRatio - v.TargetRatio),
+        optimizations |> Array.map (fun (v, std) -> v.ExcessCollateral)
 
     let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio candleRange
 
