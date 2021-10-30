@@ -1,7 +1,7 @@
 open System
 
-let now = DateTimeOffset.Now.ToUnixTimeMilliseconds()
-let ago (time:int64) = now - time
+let now () = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+let ago (time:int64) = (now ()) - time
 let minutes m = 1000L * 60L * m
 let hours h = 60L * h |> minutes 
 let days d = 24L * d |> hours
