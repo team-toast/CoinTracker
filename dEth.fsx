@@ -111,15 +111,15 @@ module DEth =
         allPrices
         |> Array.filter (fun c -> c.Time >= startDate && c.Time <= endDate)
 
-    let candleRange = savedEthPrices (toEpochTime 2017 06 01) (now ())
+    let candleRange = savedEthPrices (toEpochTime 2020 01 01) (now ())
 
     show 4
 
     let optimizations = 
-        [|1.7 .. 0.1 .. 4.0|]
+        [|1.7 .. 0.01 .. 4.0|]
         |> Array.map (
             fun target ->
-                [|0.1 .. 0.02 .. 2.0|]
+                [|0.1 .. 0.01 .. 1.0|]
                 |> Array.Parallel.map (
                     fun toll ->
                         let vaults = 
@@ -147,7 +147,32 @@ module DEth =
     let (xOpt, yOpt, zOpt) =
         optimizations |> Array.map (fun (v, std) -> v.TargetRatio),
         optimizations |> Array.map (fun (v, std) -> v.UpperRatio - v.TargetRatio),
-        optimizations |> Array.map (fun (v, std) -> v.ExcessCollateral)
+        optimizations |> Array.map (fun (v, std) -> v.ExcessCollateral / startingCollateral - 1.0)
+
+    let surface = 
+        optimizations
+        |> Array.map (fun (v, std) -> v)
+        |> Array.groupBy (fun vault -> vault.TargetRatio)
+        |> Array.sortBy (fun (g,_) -> g)
+        |> Array.map (fun (targetRatioGroup, vaults) -> 
+            vaults 
+            |> Array.groupBy (fun vault -> vault.UpperRatio - vault.TargetRatio) 
+            |> Array.sortBy (fun (g,_) -> g)
+            |> Array.map (fun (tolleranceGroup, vaults) -> (vaults |> Array.head).ExcessCollateral))
+
+    let surfaceX = 
+        optimizations
+        |> Array.map (fun (v, std) -> v)
+        |> Array.distinctBy (fun v -> v.TargetRatio)
+        |> Array.map (fun v -> v.TargetRatio)
+        |> Array.sort
+
+    let surfaceY =
+        optimizations
+        |> Array.map (fun (v, std) -> v)
+        |> Array.distinctBy (fun v-> v.UpperRatio - v.TargetRatio)
+        |> Array.map (fun v -> v.UpperRatio - v.TargetRatio)
+        |> Array.sort
 
     let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio candleRange
 
