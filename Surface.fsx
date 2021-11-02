@@ -1,14 +1,4 @@
-let make2D fa fb fval sequence =    
-    let surface = 
-        sequence
-        |> Array.groupBy fa
-        |> Array.sortBy (fun (ga,_) -> ga)
-        |> Array.map (fun (_, items) -> 
-            items 
-            |> Array.groupBy fb
-            |> Array.sortBy (fun (gb,_) -> gb)
-            |> Array.map (fun (_, items) -> items |> Array.head |> fval))
-
+let make2D fa fb fval fvalDefault sequence =    
     let surfaceA = 
         sequence
         |> Array.map fa
@@ -21,4 +11,21 @@ let make2D fa fb fval sequence =
         |> Array.distinct
         |> Array.sort
 
-    (surfaceA, surfaceB, surface)
+    let findValue a b =
+        let entry = 
+            sequence
+            |> Array.filter (fun x -> fa x = a && fb x = b)
+        
+        match entry with
+        | [||] -> fvalDefault
+        | _ -> entry.[0] |> fval
+
+    let actualSurface =
+        Array.init surfaceA.Length 
+            (fun x -> 
+                Array.init 
+                    surfaceB.Length 
+                    (fun y -> 
+                        findValue surfaceA.[x] surfaceB.[y]))
+    
+    (surfaceA, surfaceB, actualSurface)

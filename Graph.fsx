@@ -28,8 +28,11 @@ let drawLine time (series:(string * 'a) list) =
     |> Chart.withXAxisStyle("X")
     |> Chart.withYAxisStyle("Y")
 
-let drawSurface x y surface = 
+let drawSurface x y surface =
     Chart.Surface(X=x, Y=y, zData=surface)
+
+let drawSurfaceNoAxis surface =
+    Chart.Surface(zData = surface)
 
 let drawMesh x y z =
     Trace3D.initMesh3d 

@@ -47,8 +47,15 @@ let ethPrices fromTime toTime =
     |> Array.filter (fun x -> x.Time >= fromTime && x.Time <= toTime)
     |> Array.sortBy (fun x -> x.Time)
 
-let savedEthPrices fromTime toTime = 
+let loadEthPrices fromTime toTime = 
     PriceStream.Load("data/ethPrices.json")
     |> Array.Parallel.map makeCandle
     |> Array.filter (fun x -> x.Time >= fromTime && x.Time <= toTime)
     |> Array.sortBy (fun x -> x.Time)
+
+let allPrices = 
+    loadEthPrices (toEpochTime 2017 06 01) (now ())
+    
+let savedEthPrices startDate endDate =
+    allPrices
+    |> Array.filter (fun c -> c.Time >= startDate && c.Time <= endDate)

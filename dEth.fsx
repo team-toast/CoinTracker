@@ -8,19 +8,18 @@
 #load "Graph.fsx"
 #load "Drawdown.fsx"
 #load "Surface.fsx"
+#load "Vault.fsx"
 
-open FSharp.Data
+open System
 open FSharp.Stats
-
 open Plotly.NET
 
 open UnixTime
 open AssetPrices
 open Drawdown
-open Graph
 open Parameters
 open Surface
-open System.Collections.Generic
+open Vault
 
 module DEth =
 
@@ -35,128 +34,75 @@ module DEth =
         show (now () - start)
         result
 
-
-    type PossiblyUndefined =
-        | Yeah of float
-        | Nah
-
-    show 1
-
-    [<Struct>]
-    type Vault = 
-        { Time : int64
-        ; Collateral : float
-        ; Debt : float
-        ; Price : float   
-        ; TargetRatio : float
-        ; LowerRatio : float
-        ; UpperRatio : float
-        ; Rebalances : uint 
-        } with
-        member inline this.CollateralValue = this.Collateral * this.Price
-        member inline this.ExcessCollateralValue = this.CollateralValue - this.Debt
-        member inline this.ExcessCollateral = (this.ExcessCollateralValue / this.Price)
-        member inline this.Ratio = this.CollateralValue / this.Debt
-        member inline this.TargetLeverage = 1.0/(this.TargetRatio - 1.0) + 1.0
-        member inline this.ShouldRebalance = this.Debt = 0.0 || this.Ratio < this.LowerRatio || this.Ratio > this.UpperRatio
-
-    show 2
-
-    let rebalance (vault:Vault) gasPrice fee = 
-        // todo : add fees (gas, exchange, defisaver, slippage)
-        let newCollateralValue = vault.ExcessCollateralValue * vault.TargetLeverage
-        let collateralValueDiff = newCollateralValue - vault.CollateralValue
-        let collateralExchangeCharge = (collateralValueDiff * fee) / vault.Price |> abs
-        let gasFee = 1_500_000.0 * gasPrice / 1_000_000_000.0
-        let newCollateral = (newCollateralValue / vault.Price) - collateralExchangeCharge - gasFee
-        let newDebt = newCollateralValue * (vault.TargetLeverage - 1.0) / vault.TargetLeverage
-        { vault with 
-              Collateral = max newCollateral 0.0
-            ; Debt = max newDebt 0.0
-            ; Rebalances = vault.Rebalances + 1u
-        }
-
-    let nextVault vault (candle:Candle) = 
-        let preRebalanceVault = { vault with Time = candle.Time; Price = candle.Close }
-        if preRebalanceVault.ShouldRebalance then
-            rebalance preRebalanceVault gasPrice (defiSaverFee + exchangeFee)
-        else
-            preRebalanceVault
-
-    let create collateral time price targetRatio upperRatio lowerRatio = 
-        let init = 
-            { Time = time
-            ; Collateral = collateral
-            ; Debt = 2000.0
-            ; Price = price
-            ; TargetRatio = targetRatio
-            ; LowerRatio = lowerRatio
-            ; UpperRatio = upperRatio
-            ; Rebalances = 0u
-            }
-        init
-
-    let vaultList startingCollateral targetRatio upperRatio lowerRatio candleRange = 
-        let update (vaults: Vault list) (candle: Candle)  =
-            match vaults with
-            | [] -> [create startingCollateral candle.Time candle.Close targetRatio upperRatio lowerRatio]
-            | head::tail -> 
-                [nextVault head candle] @ vaults
-
-        candleRange
-        |> Array.fold update []
-
-    show 3
-
-    let allPrices = savedEthPrices (toEpochTime 2017 06 01) (now ())
-    let savedEthPrices startDate endDate =
-        allPrices
-        |> Array.filter (fun c -> c.Time >= startDate && c.Time <= endDate)
-
-    let candleRange = savedEthPrices (toEpochTime 2020 01 01) (now ())
-
-    show 4
+    let candleRange = savedEthPrices (toEpochTime 2019 01 01) (now ())
 
     let optimizations = 
-        [|1.55 .. 0.05 .. 10.0|]
+        targetRatioRange
         |> Array.map (
             fun target ->
-                [|0.1 .. 0.05 .. 10.0|]
+                tolleranceRange
                 |> Array.map (
-                    fun toll ->
+                    fun tollerance ->
                         let vaults = 
                             vaultList 
                                 startingCollateral 
                                 target 
-                                (target + toll) 
-                                (max (target - toll) 1.55)
+                                tollerance
+                                (target + tollerance) 
+                                (max (target - tollerance) 1.55)
                                 candleRange
+
                         let stDev =
                             vaults
                             |> Seq.stDevBy (fun v -> v.ExcessCollateral / startingCollateral)
-                        (vaults |> List.head), stDev
+
+                        let drawdowns = 
+                            vaults
+                            |> drawdowns (fun v -> v.Time) (fun v -> v.Profit)
+
+                        (vaults |> List.head, stDev, drawdowns |> List.head)
                     )
                 )
         |> Array.reduce Array.append
 
-    let (best, stDev) =  
+    let (best, stDev, drawdown) =  
         optimizations
-        |> Array.sortByDescending (fun (v, stDev) -> v.ExcessCollateral) // / stDev)
+        |> Array.sortByDescending (
+            fun (v, stDev, drawdown) -> (v.ExcessCollateral-startingCollateral)**2.0 / (-1.0) * drawdown.MaxPercentage)
         |> Array.head
 
-    show (best, stDev)
+    show (best, stDev, drawdown)
 
     let (surfaceX, surfaceY, surfaceZ) = 
         make2D 
-            (fun (v, _) -> v.TargetRatio) 
-            (fun (v, _) -> v.UpperRatio - v.TargetRatio) 
-            (fun (v, stDev) -> v.ExcessCollateral)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.TargetRatio)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.Tollerance)
+            (fun (v, stDev, drawdown) -> 
+                if v.ExcessCollateral > startingCollateral then
+                    v.ExcessCollateral
+                else
+                    0.0)
+            0.0
             optimizations
 
-    let vaults = vaultList startingCollateral best.TargetRatio best.UpperRatio best.LowerRatio candleRange
+    let (surfaceX2, surfaceY2, surfaceZ2) = 
+        make2D 
+            (fun (v, stDev, drawdown) -> v.VaultSettings.TargetRatio)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.Tollerance)
+            (fun (v, stDev, drawdown) -> 
+                stDev)
+            0.0
+            optimizations
 
-    let last l = List.head l
-    let first l = vaults.[vaults.Length - 1]
+    let vaults = 
+        vaultList 
+            startingCollateral 
+            best.VaultSettings.TargetRatio
+            best.VaultSettings.Tollerance
+            best.VaultSettings.UpperRatio
+            best.VaultSettings.LowerRatio
+            candleRange
+
     let actual = (List.head vaults).ExcessCollateral / vaults.[vaults.Length - 1].ExcessCollateral
     let expected = (List.head vaults).Price / vaults.[vaults.Length - 1].Price
     let rebalances = (List.head vaults).Rebalances
@@ -171,7 +117,7 @@ module DEth =
         |> List.map (fun x -> x.ExcessCollateral)
 
     let predictedCollateral = 
-        let firstPrice = (first vaults).Price
+        let firstPrice = candleRange.[0].Close
         vaults |> List.map (fun x-> {| Time = x.Time; Value = startingCollateral * x.Price / firstPrice |}) 
 
     let vaultDrawdowns = 
