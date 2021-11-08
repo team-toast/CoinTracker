@@ -33,10 +33,10 @@ module DEth =
         let vaults = 
             vaultList 
                 startingCollateral 
-                ((upper + lower) / 2.0)
+                ((upperTarget + lowerTarget) / 2.0)
                 upperTarget
                 lowerTarget
-                (abs (upper - lower) / 2.0)
+                (abs (upperTarget - lowerTarget) / 2.0)
                 upperTrigger
                 lowerTrigger
                 candleRange
@@ -59,8 +59,8 @@ module DEth =
                 lowerBounds
                 |> Array.map (
                     fun lowerTrigger ->
-                        makeVault ((upper + lower) / 2.0) ((upper + lower) / 2.0) upperTrigger lowerTrigger
-                    )
+                        makeVault ((upperTrigger + lowerTrigger) / 2.0) ((upperTrigger + lowerTrigger) / 2.0) upperTrigger lowerTrigger
+                    ) 
                 )
         |> Array.reduce Array.append
 
@@ -75,7 +75,9 @@ module DEth =
                         |> Array.map (
                             fun upperTarget -> 
                                 lowerTargets
-                                |> Array.map (fun lowerTarget -> makeVault upperTrigger lowerTrigger upperTarget lowerTarget)
+                                |> Array.map (
+                                    fun lowerTarget -> 
+                                        makeVault upperTrigger lowerTrigger upperTarget lowerTarget)
                             )
                     )
             )

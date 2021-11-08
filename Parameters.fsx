@@ -14,11 +14,10 @@ let gasPrice = 150.0 // 150.0
 let defiSaverFee = 0.003
 let exchangeFee = 0.003
 
-let ratioIncrement = 0.05
+let ratioIncrement = 0.2
 let lower = 1.7
 let upper = 5.0
 let upperBounds = [|lower + 2.0 * ratioIncrement .. ratioIncrement .. upper|]
 let upperTargets = [|lower + ratioIncrement .. ratioIncrement .. upper - ratioIncrement|]
 let lowerTargets = [|lower + ratioIncrement .. ratioIncrement .. upper - ratioIncrement|]
 let lowerBounds = [|lower .. ratioIncrement .. upper - 2.0 * ratioIncrement|]
-
