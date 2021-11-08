@@ -64,30 +64,30 @@ module DEth =
                 )
         |> Array.reduce Array.append
 
-    let optimizations2 = 
-        upperBounds
-        |> Array.map (
-            fun upperTrigger ->
-                lowerBounds
-                |> Array.map (
-                    fun lowerTrigger ->
-                        upperTargets
-                        |> Array.map (
-                            fun upperTarget -> 
-                                lowerTargets
-                                |> Array.map (
-                                    fun lowerTarget -> 
-                                        makeVault upperTrigger lowerTrigger upperTarget lowerTarget)
-                            )
-                    )
-            )
-        |> Array.reduce Array.append
-        |> Array.reduce Array.append
-        |> Array.reduce Array.append
+    // let optimizations2 = 
+    //     upperBounds
+    //     |> Array.map (
+    //         fun upperTrigger ->
+    //             lowerBounds
+    //             |> Array.map (
+    //                 fun lowerTrigger ->
+    //                     upperTargets
+    //                     |> Array.map (
+    //                         fun upperTarget -> 
+    //                             lowerTargets
+    //                             |> Array.map (
+    //                                 fun lowerTarget -> 
+    //                                     makeVault upperTrigger lowerTrigger upperTarget lowerTarget)
+    //                         )
+    //                 )
+    //         )
+    //     |> Array.reduce Array.append
+    //     |> Array.reduce Array.append
+    //     |> Array.reduce Array.append
 
     
     let (best, stDev, drawdown) =  
-        optimizations2
+        optimizations
         |> Array.filter (fun (v, _, _) -> v.ExcessCollateral > 1000.00)
         |> Array.sortByDescending (
             fun (v, stDev, drawdown) -> v.ExcessCollateral / (float drawdown.MaxPeriod))
