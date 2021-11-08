@@ -16,11 +16,24 @@ open Parameters
 
 type VaultSettings =
     { TargetRatio : float
+    ; UpperTargetRatio : float // the ratio that is targeted when the UpperRatio triggers
+    ; LowerTargetRatio : float // the ratio that is targeted when the LowerRatio triggers
     ; Tollerance : float
     ; LowerRatio : float
     ; UpperRatio : float
     ; StartingPrice : float
     }
+
+type RebalanceStatus =
+    | None
+    | UpperTarget
+    | LowerTarget
+
+let targetLeverage ratio =
+    1.0 / (ratio - 1.0) + 1.0
+
+let targetRatio leverage =
+    1.0 / (leverage - 1.0) + 1.0
 
 [<Struct>]
 type Vault = 
@@ -35,19 +48,28 @@ type Vault =
     member inline this.ExcessCollateralValue = this.CollateralValue - this.Debt
     member inline this.ExcessCollateral = (this.ExcessCollateralValue / this.Price)
     member inline this.Ratio = this.CollateralValue / this.Debt
-    member inline this.TargetLeverage = 1.0/(this.VaultSettings.TargetRatio - 1.0) + 1.0
-    member inline this.ShouldRebalance = this.Debt = 0.0 || this.Ratio < this.VaultSettings.LowerRatio || this.Ratio > this.VaultSettings.UpperRatio
+    member inline this.TargetLeverage = targetLeverage this.VaultSettings.TargetRatio
+    member inline this.UpperTargetLeverage = targetLeverage this.VaultSettings.UpperTargetRatio
+    member inline this.LowerTargetLeverage = targetLeverage this.VaultSettings.LowerTargetRatio
+    member inline this.ShouldRebalance = 
+        if this.Debt = 0.0 then 
+            RebalanceStatus.UpperTarget
+        else if this.Ratio > this.VaultSettings.UpperTargetRatio then
+            RebalanceStatus.UpperTarget
+        else if this.Ratio < this.VaultSettings.LowerTargetRatio then
+            RebalanceStatus.LowerTarget
+        else
+            RebalanceStatus.None
     member inline this.Profit = this.ExcessCollateral * this.Price - (startingCollateral * this.VaultSettings.StartingPrice) 
 
-let rebalance (vault:Vault) gasPrice fee = 
+let rebalance (vault:Vault) gasPrice fee targetLeverage = 
     // todo : add fees (gas, exchange, defisaver, slippage)
-    let newCollateralValue = vault.ExcessCollateralValue * vault.TargetLeverage
-    let newCollateralValue = (vault.Collateral * vault.Price - vault.Debt) * vault.TargetLeverage
+    let newCollateralValue = vault.ExcessCollateralValue * targetLeverage
     let collateralValueDiff = newCollateralValue - vault.CollateralValue
     let collateralExchangeCharge = (collateralValueDiff * fee) / vault.Price |> abs
     let gasFee = 1_500_000.0 * gasPrice / 1_000_000_000.0
     let newCollateral = (newCollateralValue / vault.Price) - collateralExchangeCharge - gasFee
-    let newDebt = newCollateralValue / vault.VaultSettings.TargetRatio
+    let newDebt = newCollateralValue / (targetRatio targetLeverage)
 
     { vault with 
           Collateral = max newCollateral 0.0
@@ -57,12 +79,22 @@ let rebalance (vault:Vault) gasPrice fee =
 
 let nextVault vault (candle:Candle) = 
     let preRebalanceVault = { vault with Time = candle.Time; Price = candle.Close }
-    if preRebalanceVault.ShouldRebalance then
-        rebalance preRebalanceVault gasPrice (defiSaverFee + exchangeFee)
-    else
-        preRebalanceVault
+    let fee = defiSaverFee + exchangeFee
+    match preRebalanceVault.ShouldRebalance with
+        | RebalanceStatus.UpperTarget -> rebalance preRebalanceVault gasPrice fee preRebalanceVault.UpperTargetLeverage
+        | RebalanceStatus.LowerTarget -> rebalance preRebalanceVault gasPrice fee preRebalanceVault.LowerTargetLeverage
+        | RebalanceStatus.None -> preRebalanceVault
 
-let create collateral time price targetRatio tollerance upperRatio lowerRatio = 
+let create 
+        collateral 
+        time 
+        price 
+        targetRatio 
+        upperTargetRatio
+        lowerTargetRatio 
+        tollerance 
+        upperRatio 
+        lowerRatio = 
     let init = 
         { Time = time
         ; Collateral = collateral
@@ -71,6 +103,8 @@ let create collateral time price targetRatio tollerance upperRatio lowerRatio =
         ; Rebalances = 0u
         ; VaultSettings = 
             { TargetRatio = targetRatio
+            ; UpperTargetRatio = upperTargetRatio
+            ; LowerTargetRatio = lowerTargetRatio
             ; Tollerance = tollerance
             ; UpperRatio = upperRatio
             ; LowerRatio = lowerRatio
@@ -79,7 +113,7 @@ let create collateral time price targetRatio tollerance upperRatio lowerRatio =
         }
     init
 
-let vaultList startingCollateral targetRatio tollerance upperRatio lowerRatio candleRange = 
+let vaultList startingCollateral targetRatio upperTargetRatio lowerTargetRatio tollerance upperRatio lowerRatio candleRange = 
     let update (vaults: Vault list) (candle: Candle)  =
         match vaults with
         | [] -> 
@@ -89,6 +123,8 @@ let vaultList startingCollateral targetRatio tollerance upperRatio lowerRatio ca
                     candle.Time 
                     candle.Close 
                     targetRatio 
+                    upperTargetRatio
+                    lowerTargetRatio
                     tollerance 
                     upperRatio 
                     lowerRatio

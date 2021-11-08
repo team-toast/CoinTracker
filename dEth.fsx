@@ -3,80 +3,100 @@
 #r "nuget: Plotly.NET.Interactive,  2.0.0-preview.8"
 
 #load "Parameters.fsx"
-#load "UnixTime.fsx"
 #load "AssetPrices.fsx"
 #load "Graph.fsx"
 #load "Drawdown.fsx"
 #load "Surface.fsx"
 #load "Vault.fsx"
+#load "UnixTime.fsx"
 
 open System
 open FSharp.Stats
 open Plotly.NET
 
-open UnixTime
 open AssetPrices
 open Drawdown
 open Parameters
 open Surface
 open Vault
+open UnixTime
 
 module DEth =
 
-    let show a = printf "%A\n" a
-
     show ("now:", now ())
 
-    let mutable lastTime = now ()
-    let showTimeDiffn fn = 
-        let start = now ()
-        let result = fn ()
-        show (now () - start)
-        result
+    let candleRange = 
+        //ethPrices startDate endDate
+        ethPrices startDate endDate
 
-    let candleRange = savedEthPrices (toEpochTime 2019 01 01) (now ())
+    let makeVault upperTrigger lowerTrigger upperTarget lowerTarget =
+        let vaults = 
+            vaultList 
+                startingCollateral 
+                ((upper + lower) / 2.0)
+                upperTarget
+                lowerTarget
+                (abs (upper - lower) / 2.0)
+                upperTrigger
+                lowerTrigger
+                candleRange
+
+        let stDev =
+            vaults
+            |> Seq.stDevBy (fun v -> v.ExcessCollateral / startingCollateral)
+
+        let drawdowns = 
+            vaults
+            |> drawdowns (fun v -> v.Time) (fun v -> v.Profit)
+
+        (vaults |> List.head, stDev, drawdowns |> List.head)
+
 
     let optimizations = 
-        targetRatioRange
+        upperBounds
         |> Array.map (
-            fun target ->
-                tolleranceRange
+            fun upperTrigger ->
+                lowerBounds
                 |> Array.map (
-                    fun tollerance ->
-                        let vaults = 
-                            vaultList 
-                                startingCollateral 
-                                target 
-                                tollerance
-                                (target + tollerance) 
-                                (max (target - tollerance) 1.55)
-                                candleRange
-
-                        let stDev =
-                            vaults
-                            |> Seq.stDevBy (fun v -> v.ExcessCollateral / startingCollateral)
-
-                        let drawdowns = 
-                            vaults
-                            |> drawdowns (fun v -> v.Time) (fun v -> v.Profit)
-
-                        (vaults |> List.head, stDev, drawdowns |> List.head)
+                    fun lowerTrigger ->
+                        makeVault ((upper + lower) / 2.0) ((upper + lower) / 2.0) upperTrigger lowerTrigger
                     )
                 )
         |> Array.reduce Array.append
 
+    let optimizations2 = 
+        upperBounds
+        |> Array.map (
+            fun upperTrigger ->
+                lowerBounds
+                |> Array.map (
+                    fun lowerTrigger ->
+                        upperTargets
+                        |> Array.map (
+                            fun upperTarget -> 
+                                lowerTargets
+                                |> Array.map (fun lowerTarget -> makeVault upperTrigger lowerTrigger upperTarget lowerTarget)
+                            )
+                    )
+            )
+        |> Array.reduce Array.append
+        |> Array.reduce Array.append
+        |> Array.reduce Array.append
+
+    
     let (best, stDev, drawdown) =  
-        optimizations
+        optimizations2
+        |> Array.filter (fun (v, _, _) -> v.ExcessCollateral > 1000.00)
         |> Array.sortByDescending (
-            fun (v, stDev, drawdown) -> (v.ExcessCollateral-startingCollateral)**2.0 / (-1.0) * drawdown.MaxPercentage)
+            fun (v, stDev, drawdown) -> v.ExcessCollateral / (float drawdown.MaxPeriod))
         |> Array.head
 
     show (best, stDev, drawdown)
 
     let (surfaceX, surfaceY, surfaceZ) = 
         make2D 
-            (fun (v, stDev, drawdown) -> v.VaultSettings.TargetRatio)
-            (fun (v, stDev, drawdown) -> v.VaultSettings.Tollerance)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.UpperRatio)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.LowerRatio)
             (fun (v, stDev, drawdown) -> 
                 if v.ExcessCollateral > startingCollateral then
                     v.ExcessCollateral
@@ -85,12 +105,20 @@ module DEth =
             0.0
             optimizations
 
+
+    let average = 
+        optimizations
+        |> Array.filter (fun (v, std, drawdown) -> drawdown.DrawdownPercentageSum < 0.0)
+        |> Array.averageBy (fun (v, std, drawdown) -> drawdown.DrawdownPercentageSum )
     let (surfaceX2, surfaceY2, surfaceZ2) = 
         make2D 
-            (fun (v, stDev, drawdown) -> v.VaultSettings.TargetRatio)
-            (fun (v, stDev, drawdown) -> v.VaultSettings.Tollerance)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.UpperRatio)
+            (fun (v, stDev, drawdown) -> v.VaultSettings.LowerRatio)
             (fun (v, stDev, drawdown) -> 
-                stDev)
+                if v.ExcessCollateral > startingCollateral then 
+                    drawdown.DrawdownPercentageSum
+                else 
+                    average)
             0.0
             optimizations
 
@@ -98,6 +126,8 @@ module DEth =
         vaultList 
             startingCollateral 
             best.VaultSettings.TargetRatio
+            best.VaultSettings.UpperTargetRatio
+            best.VaultSettings.LowerTargetRatio
             best.VaultSettings.Tollerance
             best.VaultSettings.UpperRatio
             best.VaultSettings.LowerRatio

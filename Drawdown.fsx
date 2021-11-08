@@ -2,6 +2,7 @@
 type Drawdown =
     { Time : int64
     ; PreviousATH : float
+    ; ATHCount : int
     ; Value : float
     ; Drawdown : float
     ; DrawdownPercentage : float
@@ -19,6 +20,7 @@ let drawdowns timef valuef list =
         | [] -> 
             [{ Time = time
             ; PreviousATH = value
+            ; ATHCount = 1
             ; Value = value
             ; Drawdown = 0.0
             ; DrawdownPercentage = 0.0
@@ -32,6 +34,7 @@ let drawdowns timef valuef list =
                 { head with 
                     Time = time
                     ; PreviousATH = value
+                    ; ATHCount = head.ATHCount + 1
                     ; Value = value
                     ; Drawdown = 0.0
                     ; DrawdownPercentage = 0.0
@@ -42,6 +45,7 @@ let drawdowns timef valuef list =
                 let newDrawdownPercentage = newDrawdown / head.PreviousATH
                 { Time = time
                 ; PreviousATH = head.PreviousATH
+                ; ATHCount = head.ATHCount
                 ; Value = value 
                 ; Drawdown = newDrawdown
                 ; DrawdownPercentage = newDrawdownPercentage
